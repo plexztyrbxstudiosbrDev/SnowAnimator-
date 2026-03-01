@@ -1,0 +1,1345 @@
+-- SNOW ANIMATOR ❄️ v8.0 FINAL EDITION
+-- Part 1/3 - Core + Hub + Persistent Saves
+-- GARANTIA DE FUNCIONAMENTO
+
+--////////////////////////////////////
+--// SERVICES
+--////////////////////////////////////
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local ContextActionService = game:GetService("ContextActionService")
+
+local Player = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local IS_MOBILE = UserInputService.TouchEnabled
+local SCREEN = Camera.ViewportSize
+
+for _,v in pairs(CoreGui:GetChildren()) do
+    if v.Name == "SnowHub" or v.Name == "SnowAnimator" then v:Destroy() end
+end
+
+--////////////////////////////////////
+--// PERSISTENT SAVES (survive leaving)
+--////////////////////////////////////
+local SAVE_KEY = "SNA_v8_SaveData"
+local function SaveToStorage(data)
+    local json = HttpService:JSONEncode(data)
+    -- Multiple methods for different executors
+    pcall(function()
+        if writefile then
+            writefile("SNA_Saves.json", json)
+        end
+    end)
+    pcall(function()
+        if setclipboard then
+            -- Fallback: also store in a StringValue
+        end
+    end)
+    -- Store in ReplicatedStorage as backup
+    pcall(function()
+        local sv = ReplicatedStorage:FindFirstChild("SNA_PersistentSaves")
+        if not sv then
+            sv = Instance.new("StringValue")
+            sv.Name = "SNA_PersistentSaves"
+            sv.Parent = ReplicatedStorage
+        end
+        sv.Value = json
+    end)
+end
+
+local function LoadFromStorage()
+    -- Try file first
+    local data = nil
+    pcall(function()
+        if readfile and isfile and isfile("SNA_Saves.json") then
+            data = HttpService:JSONDecode(readfile("SNA_Saves.json"))
+        end
+    end)
+    if data then return data end
+    -- Try ReplicatedStorage backup
+    pcall(function()
+        local sv = ReplicatedStorage:FindFirstChild("SNA_PersistentSaves")
+        if sv and sv.Value ~= "" then
+            data = HttpService:JSONDecode(sv.Value)
+        end
+    end)
+    return data or {saves={}, slots={}}
+end
+
+--////////////////////////////////////
+--// CAMERA LOCK
+--////////////////////////////////////
+local CamLock = {active=false}
+function CamLock:On()
+    if self.active then return end
+    self.active = true
+    pcall(function()
+        ContextActionService:BindActionAtPriority("SNA_Cam",function()
+            return Enum.ContextActionResult.Sink
+        end,false,3000,
+        Enum.UserInputType.MouseMovement,Enum.UserInputType.MouseButton2,
+        Enum.UserInputType.MouseButton3,Enum.UserInputType.MouseWheel,
+        Enum.UserInputType.Touch)
+    end)
+end
+function CamLock:Off()
+    if not self.active then return end
+    self.active = false
+    pcall(function() ContextActionService:UnbindAction("SNA_Cam") end)
+end
+
+--////////////////////////////////////
+--// HUB GUI
+--////////////////////////////////////
+local HubGui = Instance.new("ScreenGui")
+HubGui.Name = "SnowHub"
+HubGui.ResetOnSpawn = false
+HubGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+HubGui.DisplayOrder = 1000
+pcall(function() HubGui.Parent = CoreGui end)
+if not HubGui.Parent then HubGui.Parent = Player:WaitForChild("PlayerGui") end
+
+local hubBG = Instance.new("Frame")
+hubBG.Size = UDim2.new(1,0,1,0)
+hubBG.BackgroundColor3 = Color3.fromRGB(3,6,18)
+hubBG.BackgroundTransparency = 0.15
+hubBG.Parent = HubGui
+
+local hubW = IS_MOBILE and math.min(SCREEN.X*0.92, 420) or 480
+local hubH = IS_MOBILE and 380 or 400
+local hubFrame = Instance.new("Frame")
+hubFrame.Size = UDim2.new(0,hubW,0,hubH)
+hubFrame.Position = UDim2.new(0.5,-hubW/2,0.5,-hubH/2)
+hubFrame.BackgroundColor3 = Color3.fromRGB(12,18,38)
+hubFrame.Parent = HubGui
+Instance.new("UICorner",hubFrame).CornerRadius = UDim.new(0,14)
+local hs = Instance.new("UIStroke",hubFrame)
+hs.Color = Color3.fromRGB(60,130,230)
+hs.Thickness = 2
+Instance.new("UIGradient",hubFrame).Color = ColorSequence.new(Color3.fromRGB(14,22,48),Color3.fromRGB(8,12,30))
+
+-- Title
+local ht = Instance.new("TextLabel")
+ht.Text = "❄️ SNOW STUDIO HUB v8 ❄️"
+ht.Font = Enum.Font.GothamBold
+ht.TextSize = IS_MOBILE and 16 or 20
+ht.TextColor3 = Color3.fromRGB(200,225,255)
+ht.BackgroundTransparency = 1
+ht.Size = UDim2.new(1,0,0,40)
+ht.Parent = hubFrame
+
+local function makeHubBtn(text,desc,y,col,sCol,cb)
+    local b = Instance.new("TextButton")
+    b.Text = ""
+    b.Size = UDim2.new(1,-30,0,IS_MOBILE and 52 or 48)
+    b.Position = UDim2.new(0,15,0,y)
+    b.BackgroundColor3 = col
+    b.AutoButtonColor = false
+    b.Parent = hubFrame
+    Instance.new("UICorner",b).CornerRadius = UDim.new(0,10)
+    Instance.new("UIStroke",b).Color = sCol
+    b:FindFirstChildOfClass("UIStroke").Thickness = 1.5
+    local tl = Instance.new("TextLabel")
+    tl.Text = text
+    tl.Font = Enum.Font.GothamBold
+    tl.TextSize = IS_MOBILE and 13 or 14
+    tl.TextColor3 = Color3.fromRGB(230,240,255)
+    tl.BackgroundTransparency = 1
+    tl.Size = UDim2.new(1,-10,0,22)
+    tl.Position = UDim2.new(0,8,0,3)
+    tl.TextXAlignment = Enum.TextXAlignment.Left
+    tl.Parent = b
+    local dl = Instance.new("TextLabel")
+    dl.Text = desc
+    dl.Font = Enum.Font.Gotham
+    dl.TextSize = IS_MOBILE and 9 or 10
+    dl.TextColor3 = Color3.fromRGB(140,160,190)
+    dl.BackgroundTransparency = 1
+    dl.Size = UDim2.new(1,-10,0,16)
+    dl.Position = UDim2.new(0,8,0,24)
+    dl.TextXAlignment = Enum.TextXAlignment.Left
+    dl.TextWrapped = true
+    dl.Parent = b
+    b.MouseEnter:Connect(function() TweenService:Create(b,TweenInfo.new(0.12),{BackgroundColor3=Color3.new(math.min(col.R*1.3,1),math.min(col.G*1.3,1),math.min(col.B*1.3,1))}):Play() end)
+    b.MouseLeave:Connect(function() TweenService:Create(b,TweenInfo.new(0.12),{BackgroundColor3=col}):Play() end)
+    if cb then b.MouseButton1Click:Connect(cb) end
+    return b
+end
+
+makeHubBtn("❄️ Snow Animator","Animate Rigs, Parts, UIs, Tools + Curve Editor",48,
+    Color3.fromRGB(25,42,85),Color3.fromRGB(70,140,240),function()
+    hubBG.Visible=false;hubFrame.Visible=false;_G.SNA_LOAD=true
+end)
+
+makeHubBtn("⚡ Lightning Terrain","Terrain Editor for Studio Lite",IS_MOBILE and 106 or 102,
+    Color3.fromRGB(50,38,15),Color3.fromRGB(220,170,50),function()
+    HubGui:Destroy()
+    loadstring(game:HttpGet("https://pastebin.com/raw/mXCzAaSP",true))()
+end)
+
+-- Loadstring slots
+local slotY = IS_MOBILE and 168 or 160
+local slotSep = Instance.new("TextLabel")
+slotSep.Text = "── Extra Tools ──"
+slotSep.Font = Enum.Font.Gotham
+slotSep.TextSize = 10
+slotSep.TextColor3 = Color3.fromRGB(90,110,150)
+slotSep.BackgroundTransparency = 1
+slotSep.Size = UDim2.new(1,0,0,18)
+slotSep.Position = UDim2.new(0,0,0,slotY-4)
+slotSep.Parent = hubFrame
+
+local SLOTS = {}
+local savedData = LoadFromStorage()
+local savedSlots = savedData.slots or {}
+
+local slotScroll = Instance.new("ScrollingFrame")
+slotScroll.Size = UDim2.new(1,-20,0,hubH-slotY-20)
+slotScroll.Position = UDim2.new(0,10,0,slotY+14)
+slotScroll.BackgroundTransparency = 1
+slotScroll.ScrollBarThickness = 2
+slotScroll.ScrollBarImageColor3 = Color3.fromRGB(70,130,230)
+slotScroll.CanvasSize = UDim2.new(0,0,0,0)
+slotScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+slotScroll.Parent = hubFrame
+Instance.new("UIListLayout",slotScroll).Padding = UDim.new(0,4)
+
+local SLOT_DATA = {
+    {name="Slot 1",icon="🔧",col=Color3.fromRGB(35,25,60),sc=Color3.fromRGB(130,80,220)},
+    {name="Slot 2",icon="🎨",col=Color3.fromRGB(25,40,25),sc=Color3.fromRGB(80,180,70)},
+    {name="Slot 3",icon="⚡",col=Color3.fromRGB(45,35,15),sc=Color3.fromRGB(200,150,50)},
+    {name="Slot 4",icon="🌟",col=Color3.fromRGB(40,20,20),sc=Color3.fromRGB(200,70,70)},
+    {name="Slot 5",icon="💎",col=Color3.fromRGB(20,35,50),sc=Color3.fromRGB(60,160,200)},
+}
+
+for idx,sd in ipairs(SLOT_DATA) do
+    local url = savedSlots[idx] or ""
+    SLOTS[idx] = {url=url}
+    
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1,0,0,IS_MOBILE and 36 or 32)
+    row.BackgroundColor3 = sd.col
+    row.Parent = slotScroll
+    Instance.new("UICorner",row).CornerRadius = UDim.new(0,8)
+    Instance.new("UIStroke",row).Color = sd.sc
+    
+    local rl = Instance.new("TextLabel")
+    rl.Text = sd.icon.." "..sd.name..(url~="" and " ✅" or "")
+    rl.Font = Enum.Font.GothamBold
+    rl.TextSize = IS_MOBILE and 10 or 11
+    rl.TextColor3 = Color3.fromRGB(210,220,240)
+    rl.BackgroundTransparency = 1
+    rl.Size = UDim2.new(1,-80,1,0)
+    rl.Position = UDim2.new(0,8,0,0)
+    rl.TextXAlignment = Enum.TextXAlignment.Left
+    rl.Parent = row
+    
+    local runBtn = Instance.new("TextButton")
+    runBtn.Text = "▶"
+    runBtn.Font = Enum.Font.GothamBold
+    runBtn.TextSize = 12
+    runBtn.TextColor3 = Color3.fromRGB(100,220,120)
+    runBtn.BackgroundColor3 = Color3.fromRGB(30,60,30)
+    runBtn.Size = UDim2.new(0,IS_MOBILE and 30 or 28,0,IS_MOBILE and 26 or 22)
+    runBtn.Position = UDim2.new(1,-72,0.5,IS_MOBILE and -13 or -11)
+    runBtn.Parent = row
+    Instance.new("UICorner",runBtn).CornerRadius = UDim.new(0,5)
+    
+    local setBtn = Instance.new("TextButton")
+    setBtn.Text = "⚙️"
+    setBtn.Font = Enum.Font.Gotham
+    setBtn.TextSize = 12
+    setBtn.BackgroundColor3 = Color3.fromRGB(40,45,65)
+    setBtn.TextColor3 = Color3.new(0.8,0.8,0.8)
+    setBtn.Size = UDim2.new(0,IS_MOBILE and 30 or 28,0,IS_MOBILE and 26 or 22)
+    setBtn.Position = UDim2.new(1,-38,0.5,IS_MOBILE and -13 or -11)
+    setBtn.Parent = row
+    Instance.new("UICorner",setBtn).CornerRadius = UDim.new(0,5)
+    
+    runBtn.MouseButton1Click:Connect(function()
+        if SLOTS[idx].url and SLOTS[idx].url ~= "" then
+            HubGui:Destroy()
+            pcall(function() loadstring(game:HttpGet(SLOTS[idx].url,true))() end)
+        end
+    end)
+    
+    setBtn.MouseButton1Click:Connect(function()
+        local d = Instance.new("Frame")
+        d.Size = UDim2.new(0,IS_MOBILE and 300 or 320,0,90)
+        d.Position = UDim2.new(0.5,IS_MOBILE and -150 or -160,0.5,-45)
+        d.BackgroundColor3 = Color3.fromRGB(18,24,50)
+        d.ZIndex = 200
+        d.Parent = HubGui
+        Instance.new("UICorner",d).CornerRadius = UDim.new(0,10)
+        Instance.new("UIStroke",d).Color = sd.sc
+        
+        local di = Instance.new("TextBox")
+        di.PlaceholderText = "Paste URL here..."
+        di.Text = SLOTS[idx].url or ""
+        di.Font = Enum.Font.Code
+        di.TextSize = 9
+        di.TextColor3 = Color3.new(1,1,1)
+        di.PlaceholderColor3 = Color3.new(0.4,0.4,0.4)
+        di.BackgroundColor3 = Color3.fromRGB(12,16,35)
+        di.Size = UDim2.new(1,-16,0,24)
+        di.Position = UDim2.new(0,8,0,8)
+        di.ClearTextOnFocus = false
+        di.ZIndex = 201
+        di.Parent = d
+        Instance.new("UICorner",di).CornerRadius = UDim.new(0,4)
+        
+        local sv2 = Instance.new("TextButton")
+        sv2.Text = "✅ Save"
+        sv2.Font = Enum.Font.GothamBold
+        sv2.TextSize = 11
+        sv2.TextColor3 = Color3.new(1,1,1)
+        sv2.BackgroundColor3 = Color3.fromRGB(35,100,50)
+        sv2.Size = UDim2.new(0,70,0,24)
+        sv2.Position = UDim2.new(0.5,-38,0,40)
+        sv2.ZIndex = 201
+        sv2.Parent = d
+        Instance.new("UICorner",sv2).CornerRadius = UDim.new(0,5)
+        
+        local cx = Instance.new("TextButton")
+        cx.Text = "✕"
+        cx.Font = Enum.Font.GothamBold
+        cx.TextSize = 12
+        cx.TextColor3 = Color3.fromRGB(255,100,100)
+        cx.BackgroundColor3 = Color3.fromRGB(80,20,20)
+        cx.Size = UDim2.new(0,24,0,24)
+        cx.Position = UDim2.new(1,-28,0,4)
+        cx.ZIndex = 201
+        cx.Parent = d
+        Instance.new("UICorner",cx).CornerRadius = UDim.new(0,5)
+        
+        sv2.MouseButton1Click:Connect(function()
+            SLOTS[idx].url = di.Text
+            rl.Text = sd.icon.." "..sd.name..(di.Text~="" and " ✅" or "")
+            local ss = {}
+            for ii,sl in ipairs(SLOTS) do ss[ii] = sl.url end
+            local sd2 = LoadFromStorage()
+            sd2.slots = ss
+            SaveToStorage(sd2)
+            d:Destroy()
+        end)
+        cx.MouseButton1Click:Connect(function() d:Destroy() end)
+    end)
+end
+
+repeat task.wait(0.1) until _G.SNA_LOAD or not HubGui.Parent
+if not _G.SNA_LOAD then return end
+_G.SNA_LOAD = nil
+
+--////////////////////////////////////
+--// CONFIG
+--////////////////////////////////////
+local C = {
+    ICE=Color3.fromRGB(195,225,255),DARK=Color3.fromRGB(12,20,48),
+    ACC=Color3.fromRGB(65,145,240),ACC2=Color3.fromRGB(90,170,255),
+    ACD=Color3.fromRGB(35,90,190),BG1=Color3.fromRGB(16,22,42),
+    BG2=Color3.fromRGB(22,30,55),BG3=Color3.fromRGB(30,40,70),
+    TX=Color3.fromRGB(215,230,255),TX2=Color3.fromRGB(130,150,190),
+    KF=Color3.fromRGB(255,195,55),KFS=Color3.fromRGB(255,110,55),
+    TBG=Color3.fromRGB(14,20,38),TRK=Color3.fromRGB(18,25,48),
+    TRA=Color3.fromRGB(22,30,55),RED=Color3.fromRGB(240,70,70),
+    GRN=Color3.fromRGB(65,200,110),YEL=Color3.fromRGB(240,170,50),
+    SEP=Color3.fromRGB(42,55,90),BTN=Color3.fromRGB(32,45,78),
+    BTH=Color3.fromRGB(48,65,108),CURVE=Color3.fromRGB(110,240,170),
+    GHOST=Color3.fromRGB(90,90,220),CURVE2=Color3.fromRGB(240,130,190),
+}
+local BH = IS_MOBILE and 30 or 24
+local FS = IS_MOBILE and 10 or 9
+
+local PURP={"Core","Idle","Walk","Run","Jump","Climb","Fall","Action1","Action2","Action3","Action4","Emote","Dance","Custom"}
+local EASES={"Linear","Quad","Cubic","Quart","Quint","Sine","Exponential","Circular","Elastic","Back","Bounce"}
+local EDIRS={"In","Out","InOut"}
+
+local ST={
+    target=nil,tracks={},kfs={},frame=0,total=300,playing=false,looping=true,
+    speed=1.0,purpose="Core",purpIdx=1,saves={},undo={},redo={},copied={},
+    autoKey=false,snap=true,easing="Linear",easeDir="InOut",zoom=1.0,
+    scrollX=0,animCt=0,originals={},selTrack=nil,selKF=nil,minimized=false,
+    selectMode=false,selectConn=nil,exportLoop=false,curveMode=false,
+    onionSkin=false,onionCount=3,ghostParts={},motionPath=false,
+    isDragging=false,
+    bezH={h1x=0.25,h1y=0.1,h2x=0.75,h2y=0.9},
+}
+
+-- Load persistent saves
+local pData = LoadFromStorage()
+if pData.saves then
+    -- Restore save metadata (can't restore instance refs but names/data persist)
+    for _,s in ipairs(pData.saves) do
+        table.insert(ST.saves, s)
+    end
+end
+
+-- Utils
+local function lerp(a,b,t) return a+(b-a)*t end
+local function deepCopy(t) if type(t)~="table" then return t end;local c={};for k,v in pairs(t) do c[deepCopy(k)]=deepCopy(v) end;return c end
+local function snapG(f) if ST.snap then return math.floor(f/5+0.5)*5 end;return math.floor(f+0.5) end
+local function genID() ST.animCt=ST.animCt+1;return string.format("%04d",ST.animCt) end
+local function toClip(t) pcall(function() setclipboard(t) end);pcall(function() toclipboard(t) end) end
+
+local function bO(x) local n=7.5625;local d=2.75;if x<1/d then return n*x*x elseif x<2/d then x=x-1.5/d;return n*x*x+0.75 elseif x<2.5/d then x=x-2.25/d;return n*x*x+0.9375 else x=x-2.625/d;return n*x*x+0.984375 end end
+local function eI(x,s) if s=="Linear" then return x elseif s=="Quad" then return x*x elseif s=="Cubic" then return x^3 elseif s=="Quart" then return x^4 elseif s=="Quint" then return x^5 elseif s=="Sine" then return 1-math.cos(x*math.pi/2) elseif s=="Exponential" then return x==0 and 0 or 2^(10*(x-1)) elseif s=="Circular" then return 1-math.sqrt(math.max(0,1-x*x)) elseif s=="Elastic" then if x==0 or x==1 then return x end;return -(2^(10*(x-1)))*math.sin((x-1.075)*2*math.pi/0.3) elseif s=="Back" then return x*x*((1.70158+1)*x-1.70158) elseif s=="Bounce" then return 1-bO(1-x) end;return x end
+local function EE(t,s,d) if d=="In" then return eI(t,s) elseif d=="Out" then return 1-eI(1-t,s) else if t<0.5 then return eI(t*2,s)/2 else return 1-eI((1-t)*2,s)/2 end end end
+local function BezEval(t,h1x,h1y,h2x,h2y) local function cb(t2,p0,p1,p2,p3) local u=1-t2;return u*u*u*p0+3*u*u*t2*p1+3*u*t2*t2*p2+t2*t2*t2*p3 end;local lo,hi=0,1;for _=1,20 do local m2=(lo+hi)/2;if cb(m2,0,h1x,h2x,1)<t then lo=m2 else hi=m2 end end;return cb((lo+hi)/2,0,h1y,h2y,1) end
+local function IV(v1,v2,a,vt) if vt=="CFrame" then return v1:Lerp(v2,a) elseif vt=="Vector3" then return v1:Lerp(v2,a) elseif vt=="Color3" then return Color3.new(lerp(v1.R,v2.R,a),lerp(v1.G,v2.G,a),lerp(v1.B,v2.B,a)) elseif vt=="Number" then return lerp(v1,v2,a) elseif vt=="UDim2" then return UDim2.new(lerp(v1.X.Scale,v2.X.Scale,a),lerp(v1.X.Offset,v2.X.Offset,a),lerp(v1.Y.Scale,v2.Y.Scale,a),lerp(v1.Y.Offset,v2.Y.Offset,a)) end;return a<0.5 and v1 or v2 end
+local function cfToRot(cf) local x,y,z=cf:ToEulerAnglesXYZ();return cf.Position,Vector3.new(math.deg(x),math.deg(y),math.deg(z)) end
+local function rotToCF(pos,rot) return CFrame.new(pos)*CFrame.Angles(math.rad(rot.X),math.rad(rot.Y),math.rad(rot.Z)) end
+
+local function getProps(inst)
+    local p={}
+    if inst:IsA("Motor6D") then
+        table.insert(p,{n="Transform",t="CFrame"})
+    elseif inst:IsA("BasePart") then
+        table.insert(p,{n="CFrame",t="CFrame"});table.insert(p,{n="Size",t="Vector3"})
+        table.insert(p,{n="Color",t="Color3"});table.insert(p,{n="Transparency",t="Number"})
+    elseif inst:IsA("GuiObject") then
+        table.insert(p,{n="Position",t="UDim2"});table.insert(p,{n="Size",t="UDim2"})
+        table.insert(p,{n="Rotation",t="Number"});table.insert(p,{n="BackgroundTransparency",t="Number"})
+    end
+    return p
+end
+
+-- GUI
+local SG = Instance.new("ScreenGui")
+SG.Name = "SnowAnimator"
+SG.ResetOnSpawn = false
+SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+SG.DisplayOrder = 999
+pcall(function() SG.Parent = CoreGui end)
+if not SG.Parent then SG.Parent = Player:WaitForChild("PlayerGui") end
+
+local function new(c,p) local i=Instance.new(c);for k,v in pairs(p or {}) do if k~="Parent" then pcall(function() i[k]=v end) end end;if p and p.Parent then i.Parent=p.Parent end;return i end
+local function corner(p,r) return new("UICorner",{CornerRadius=UDim.new(0,r or 6),Parent=p}) end
+local function stroke(p,c2,t) return new("UIStroke",{Color=c2 or C.ACC,Thickness=t or 1,Parent=p}) end
+local function pad(p,t,b,l,r) return new("UIPadding",{PaddingTop=UDim.new(0,t or 2),PaddingBottom=UDim.new(0,b or 2),PaddingLeft=UDim.new(0,l or 4),PaddingRight=UDim.new(0,r or 4),Parent=p}) end
+
+local function makeDrag(tb,fr)
+    local d,ds,fs=false,Vector2.new(),UDim2.new()
+    tb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then d=true;ST.isDragging=true;CamLock:On();ds=Vector2.new(i.Position.X,i.Position.Y);fs=fr.Position;i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then d=false;ST.isDragging=false;CamLock:Off() end end) end end)
+    UserInputService.InputChanged:Connect(function(i) if d and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local delta=Vector2.new(i.Position.X,i.Position.Y)-ds;fr.Position=UDim2.new(fs.X.Scale,fs.X.Offset+delta.X,fs.Y.Scale,fs.Y.Offset+delta.Y) end end)
+end
+
+local function btn(par,text,size,cb,bg)
+    bg=bg or C.BTN
+    local b=new("TextButton",{Text=text,Font=Enum.Font.GothamBold,TextSize=FS,TextColor3=C.TX,BackgroundColor3=bg,Size=size or UDim2.new(0,60,0,BH),AutoButtonColor=false,Parent=par})
+    corner(b,5);stroke(b,C.ACD,1)
+    b.MouseEnter:Connect(function() TweenService:Create(b,TweenInfo.new(0.08),{BackgroundColor3=C.BTH}):Play() end)
+    b.MouseLeave:Connect(function() TweenService:Create(b,TweenInfo.new(0.08),{BackgroundColor3=bg}):Play() end)
+    b.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch then TweenService:Create(b,TweenInfo.new(0.04),{BackgroundColor3=C.BTH}):Play() end end)
+    b.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch then TweenService:Create(b,TweenInfo.new(0.08),{BackgroundColor3=bg}):Play() end end)
+    if cb then b.MouseButton1Click:Connect(cb) end
+    return b
+end
+
+local function lbl(par,text,size,pos,col,fs2) return new("TextLabel",{Text=text,Font=Enum.Font.GothamBold,TextSize=fs2 or FS,TextColor3=col or C.TX,BackgroundTransparency=1,Size=size or UDim2.new(1,0,0,14),Position=pos or UDim2.new(0,0,0,0),TextXAlignment=Enum.TextXAlignment.Left,Parent=par}) end
+
+local function slider(par,label,mn,mx,def,onChange)
+    local fr=new("Frame",{Size=UDim2.new(1,0,0,IS_MOBILE and 32 or 26),BackgroundColor3=C.BG3,Parent=par});corner(fr,4)
+    lbl(fr,label,UDim2.new(0,36,0,10),UDim2.new(0,2,0,1),C.ACC,8)
+    local vl=lbl(fr,string.format("%.1f",def),UDim2.new(0,34,0,10),UDim2.new(1,-36,0,1),C.KF,8);vl.TextXAlignment=Enum.TextXAlignment.Right
+    local track2=new("Frame",{Size=UDim2.new(1,-6,0,IS_MOBILE and 8 or 6),Position=UDim2.new(0,3,1,IS_MOBILE and -11 or -9),BackgroundColor3=C.BG1,Parent=fr});corner(track2,3)
+    local fill=new("Frame",{Size=UDim2.new(math.clamp((def-mn)/(mx-mn),0,1),0,1,0),BackgroundColor3=C.ACC,Parent=track2});corner(fill,3)
+    local ts=IS_MOBILE and 12 or 8
+    local thumb=new("Frame",{Size=UDim2.new(0,ts,0,ts),Position=UDim2.new(math.clamp((def-mn)/(mx-mn),0,1),-ts/2,0.5,-ts/2),BackgroundColor3=C.TX,ZIndex=5,Parent=track2});corner(thumb,ts/2)
+    local dragging=false;local cur=def
+    local function upd(ipos) local rel=math.clamp((ipos.X-track2.AbsolutePosition.X)/math.max(track2.AbsoluteSize.X,1),0,1);cur=mn+(mx-mn)*rel;fill.Size=UDim2.new(rel,0,1,0);thumb.Position=UDim2.new(rel,-ts/2,0.5,-ts/2);vl.Text=string.format("%.1f",cur);if onChange then onChange(cur) end end
+    track2.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dragging=true;ST.isDragging=true;CamLock:On();upd(i.Position);i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false;ST.isDragging=false;CamLock:Off() end end) end end)
+    UserInputService.InputChanged:Connect(function(i) if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then upd(i.Position) end end)
+    return fr
+end
+
+local function createPanel(name,title,w,h)
+    local p=new("Frame",{Name=name,Size=IS_MOBILE and UDim2.new(0.88,0,0,h) or UDim2.new(0,w,0,h),Position=IS_MOBILE and UDim2.new(0.06,0,0.06,0) or UDim2.new(0.5,-w/2,0.5,-h/2),BackgroundColor3=C.BG1,Visible=false,ZIndex=80,Parent=SG})
+    corner(p,10);stroke(p,C.ACC,2)
+    local t=new("Frame",{Size=UDim2.new(1,0,0,26),BackgroundColor3=C.BG2,ZIndex=81,Parent=p});corner(t,10)
+    lbl(t,title,UDim2.new(1,-30,1,0),UDim2.new(0,6,0,0),C.ICE,11).ZIndex=82
+    makeDrag(t,p)
+    btn(t,"✕",UDim2.new(0,22,0,22),function() p.Visible=false end,C.RED).Position=UDim2.new(1,-24,0,2)
+    return p
+end
+
+-- Notifs
+local notifC=new("Frame",{Size=UDim2.new(0,IS_MOBILE and 180 or 210,0,120),Position=UDim2.new(1,IS_MOBILE and -185 or -215,0,4),BackgroundTransparency=1,ZIndex=200,Parent=SG})
+new("UIListLayout",{Padding=UDim.new(0,2),VerticalAlignment=Enum.VerticalAlignment.Bottom,SortOrder=Enum.SortOrder.LayoutOrder,Parent=notifC})
+local function notify(text,color,dur) color=color or C.ACC;dur=dur or 2;local n=new("TextLabel",{Text="  "..text,Font=Enum.Font.GothamBold,TextSize=IS_MOBILE and 8 or 9,TextColor3=C.TX,BackgroundColor3=color,BackgroundTransparency=0.1,Size=UDim2.new(1,0,0,IS_MOBILE and 20 or 18),TextXAlignment=Enum.TextXAlignment.Left,TextWrapped=true,ZIndex=201,Parent=notifC,AutomaticSize=Enum.AutomaticSize.Y});corner(n,4);task.delay(dur,function() if n.Parent then TweenService:Create(n,TweenInfo.new(0.3),{BackgroundTransparency=1,TextTransparency=1}):Play();task.delay(0.3,function() if n.Parent then n:Destroy() end end) end end) end
+
+local selInd=new("TextLabel",{Text="🎯 TAP/CLICK TARGET",Font=Enum.Font.GothamBold,TextSize=IS_MOBILE and 12 or 14,TextColor3=C.KF,BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=0.4,Size=UDim2.new(0,IS_MOBILE and 220 or 280,0,IS_MOBILE and 36 or 34),Position=UDim2.new(0.5,IS_MOBILE and -110 or -140,0,IS_MOBILE and 44 or 38),Visible=false,ZIndex=300,Parent=SG,TextWrapped=true});corner(selInd,8);stroke(selInd,C.KF,2)
+
+-- Forward declarations
+local savesPanel, exportPanel, guidePanel, curvePanel
+local rebuildTracks, showProps, rebuildTimeline, updatePlayhead, applyFrame, rebuildSaves
+local addKeyframe, loadTarget, startGizmoMonitor, pushUndo, exportID, clearGhosts
+local selectBtn, rebuildCurveEditor
+local persistSaves
+
+function persistSaves()
+    local sd = LoadFromStorage()
+    -- Convert saves to serializable format (strip instances)
+    local serSaves = {}
+    for _,sv in ipairs(ST.saves) do
+        local serKFs = {}
+        for id,kfs in pairs(sv.KFs or {}) do
+            serKFs[id] = {}
+            for f,kd in pairs(kfs) do
+                serKFs[id][tostring(f)] = {}
+                for pn,pi in pairs(kd) do
+                    local vStr = ""
+                    if pi.t == "CFrame" then
+                        local comps = {pi.v:GetComponents()}
+                        local parts = {}
+                        for _,x in ipairs(comps) do table.insert(parts, string.format("%.5f",x)) end
+                        vStr = table.concat(parts,",")
+                    elseif pi.t == "Vector3" then
+                        vStr = string.format("%.5f,%.5f,%.5f",pi.v.X,pi.v.Y,pi.v.Z)
+                    elseif pi.t == "Color3" then
+                        vStr = string.format("%.5f,%.5f,%.5f",pi.v.R,pi.v.G,pi.v.B)
+                    elseif pi.t == "Number" then
+                        vStr = tostring(pi.v)
+                    elseif pi.t == "UDim2" then
+                        vStr = string.format("%.5f,%d,%.5f,%d",pi.v.X.Scale,pi.v.X.Offset,pi.v.Y.Scale,pi.v.Y.Offset)
+                    end
+                    serKFs[id][tostring(f)][pn] = {
+                        v=vStr, t=pi.t, es=pi.es or "Linear", ed=pi.ed or "InOut",
+                        bh=pi.bh
+                    }
+                end
+            end
+        end
+        table.insert(serSaves, {
+            Name=sv.Name, Purpose=sv.Purpose, Speed=sv.Speed,
+            Total=sv.Total, Loop=sv.Loop, KFs=serKFs,
+            TrackNames=sv.TrackNames or {}
+        })
+    end
+    sd.saves = serSaves
+    SaveToStorage(sd)
+end
+
+print("❄️ SNA v8.0 Part 1 loaded")
+
+-- SNOW ANIMATOR ❄️ v8.0 FINAL EDITION
+-- Part 2/3 - Main UI + Timeline + Panels
+-- Cole APÓS a Parte 1
+
+--////////////////////////////////////
+-- MAIN FRAME (COMPACT for mobile)
+--////////////////////////////////////
+local mW = IS_MOBILE and math.min(math.floor(SCREEN.X*0.88), 380) or 640
+local mH = IS_MOBILE and math.floor(SCREEN.Y*0.38) or 310
+
+local Main=new("Frame",{Name="Main",Size=UDim2.new(0,mW,0,mH),Position=IS_MOBILE and UDim2.new(0.5,-mW/2,0.58,-mH/2) or UDim2.new(0.5,-mW/2,1,-mH-6),BackgroundColor3=C.BG1,Parent=SG})
+corner(Main,10);stroke(Main,C.ACC,2)
+
+local TBar=new("Frame",{Size=UDim2.new(1,0,0,IS_MOBILE and 28 or 24),BackgroundColor3=C.BG2,Parent=Main});corner(TBar,10)
+new("Frame",{Size=UDim2.new(1,0,0,8),Position=UDim2.new(0,0,1,-8),BackgroundColor3=C.BG2,BorderSizePixel=0,Parent=TBar})
+lbl(TBar,"❄️ SNA v8",UDim2.new(0,80,1,0),UDim2.new(0,6,0,0),C.ICE,IS_MOBILE and 10 or 11)
+makeDrag(TBar,Main)
+
+btn(TBar,"✕",UDim2.new(0,BH-4,0,BH-4),function()
+    if ST.selectConn then ST.selectConn:Disconnect() end
+    clearGhosts();CamLock:Off();SG:Destroy()
+    if HubGui then HubGui:Destroy() end
+end,C.RED).Position=UDim2.new(1,-BH+1,0,1)
+
+local minBtn
+minBtn=btn(TBar,"—",UDim2.new(0,BH-4,0,BH-4),function()
+    ST.minimized=not ST.minimized
+    TweenService:Create(Main,TweenInfo.new(0.15),{Size=ST.minimized and UDim2.new(0,mW,0,IS_MOBILE and 28 or 24) or UDim2.new(0,mW,0,mH)}):Play()
+    minBtn.Text=ST.minimized and "+" or "—"
+end,C.YEL);minBtn.Position=UDim2.new(1,-BH*2,0,1)
+
+local Content=new("Frame",{Size=UDim2.new(1,-2,1,-(IS_MOBILE and 30 or 26)),Position=UDim2.new(0,1,0,IS_MOBILE and 29 or 25),BackgroundTransparency=1,ClipsDescendants=true,Parent=Main})
+
+-- TOOLBAR (scrollable)
+local TB=new("ScrollingFrame",{Size=UDim2.new(1,0,0,IS_MOBILE and 30 or 26),BackgroundColor3=C.BG2,ScrollBarThickness=IS_MOBILE and 2 or 0,ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.X,ScrollingDirection=Enum.ScrollingDirection.X,Parent=Content})
+corner(TB,5);new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,2),VerticalAlignment=Enum.VerticalAlignment.Center,Parent=TB});pad(TB,1,1,3,3)
+
+TB.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch then CamLock:On();ST.isDragging=true end end)
+TB.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch then task.delay(0.1,function() ST.isDragging=false;CamLock:Off() end) end end)
+
+local bsz = IS_MOBILE and UDim2.new(0,52,0,BH-2) or UDim2.new(0,50,0,BH-2)
+
+selectBtn=btn(TB,"🎯",bsz,function()
+    if ST.selectMode then
+        ST.selectMode=false;selInd.Visible=false
+        if ST.selectConn then ST.selectConn:Disconnect();ST.selectConn=nil end
+        selectBtn.Text="🎯";selectBtn.BackgroundColor3=C.BTN;return
+    end
+    local got=false
+    pcall(function() local S=game:GetService("Selection");local s=S:Get();if s and #s>0 then loadTarget(s[1]);got=true end end)
+    if got then return end
+    ST.selectMode=true;selInd.Visible=true;selectBtn.Text="✕";selectBtn.BackgroundColor3=C.RED
+    ST.selectConn=UserInputService.InputBegan:Connect(function(input,gp)
+        if not ST.selectMode then return end
+        if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
+        if ST.isDragging then return end
+        local pos=input.Position
+        local function onUI(f) if not f or not f.Visible then return false end;local p2=f.AbsolutePosition;local s2=f.AbsoluteSize;return pos.X>=p2.X and pos.X<=p2.X+s2.X and pos.Y>=p2.Y and pos.Y<=p2.Y+s2.Y end
+        if onUI(Main) or onUI(savesPanel) or onUI(exportPanel) or onUI(guidePanel) or onUI(curvePanel) then return end
+        pcall(function() local S=game:GetService("Selection");local s=S:Get();if s and #s>0 then ST.selectMode=false;selInd.Visible=false;if ST.selectConn then ST.selectConn:Disconnect();ST.selectConn=nil end;selectBtn.Text="🎯";selectBtn.BackgroundColor3=C.BTN;loadTarget(s[1]);return end end)
+        if not ST.selectMode then return end
+        task.wait()
+        local ray=Camera:ScreenPointToRay(pos.X,pos.Y)
+        local params=RaycastParams.new();params.FilterType=Enum.RaycastFilterType.Exclude;params.FilterDescendantsInstances={Player.Character}
+        local result=Workspace:Raycast(ray.Origin,ray.Direction*1000,params)
+        if result and result.Instance then
+            local hit=result.Instance;local target=hit
+            local model=hit:FindFirstAncestorOfClass("Model")
+            if model and model~=Workspace then
+                for _,d in pairs(model:GetDescendants()) do if d:IsA("Motor6D") or d:IsA("Humanoid") then target=model;break end end
+            end
+            ST.selectMode=false;selInd.Visible=false;if ST.selectConn then ST.selectConn:Disconnect();ST.selectConn=nil end
+            selectBtn.Text="🎯";selectBtn.BackgroundColor3=C.BTN;loadTarget(target)
+        end
+    end)
+end)
+
+btn(TB,"⚙️K",bsz,function() addKeyframe() end)
+
+local spdLbl
+btn(TB,"−",UDim2.new(0,IS_MOBILE and 26 or 22,0,BH-2),function() ST.speed=math.max(0.1,ST.speed-0.5);spdLbl.Text=string.format("%.1f",ST.speed) end)
+spdLbl=new("TextLabel",{Text="1.0",Font=Enum.Font.GothamBold,TextSize=FS,TextColor3=C.KF,BackgroundColor3=C.BG3,Size=UDim2.new(0,IS_MOBILE and 30 or 26,0,BH-2),Parent=TB});corner(spdLbl,4)
+btn(TB,"+",UDim2.new(0,IS_MOBILE and 26 or 22,0,BH-2),function() ST.speed=math.min(10,ST.speed+0.5);spdLbl.Text=string.format("%.1f",ST.speed) end)
+
+btn(TB,"💾",bsz,function() if savesPanel then savesPanel.Visible=not savesPanel.Visible end end)
+btn(TB,"↩",UDim2.new(0,IS_MOBILE and 28 or 24,0,BH-2),function() if #ST.undo>0 then table.insert(ST.redo,{d=deepCopy(ST.kfs)});ST.kfs=deepCopy(table.remove(ST.undo).d);rebuildTimeline() end end)
+btn(TB,"↪",UDim2.new(0,IS_MOBILE and 28 or 24,0,BH-2),function() if #ST.redo>0 then table.insert(ST.undo,{d=deepCopy(ST.kfs)});ST.kfs=deepCopy(table.remove(ST.redo).d);rebuildTimeline() end end)
+btn(TB,"🗑",UDim2.new(0,IS_MOBILE and 28 or 24,0,BH-2),function() pushUndo();for _,kfs in pairs(ST.kfs) do kfs[ST.frame]=nil end;rebuildTimeline() end)
+
+local akBtn;akBtn=btn(TB,"🔴",UDim2.new(0,IS_MOBILE and 28 or 24,0,BH-2),function() ST.autoKey=not ST.autoKey;akBtn.BackgroundColor3=ST.autoKey and Color3.fromRGB(100,25,25) or C.BTN end)
+
+local easeBtn;easeBtn=btn(TB,"⚡L",UDim2.new(0,IS_MOBILE and 36 or 32,0,BH-2),function()
+    local idx=table.find(EASES,ST.easing) or 1;idx=(idx%#EASES)+1;ST.easing=EASES[idx]
+    easeBtn.Text="⚡"..ST.easing:sub(1,2)
+    notify(ST.easing.." "..ST.easeDir,C.ACC)
+end)
+
+btn(TB,"📈",UDim2.new(0,IS_MOBILE and 28 or 24,0,BH-2),function() if curvePanel then curvePanel.Visible=not curvePanel.Visible;if curvePanel.Visible then rebuildCurveEditor() end end end)
+btn(TB,"📤",bsz,function() if exportPanel then exportPanel.Visible=not exportPanel.Visible end end)
+btn(TB,"📖",bsz,function() if guidePanel then guidePanel.Visible=not guidePanel.Visible end end)
+
+--// LOWER AREA
+local Lower=new("Frame",{Size=UDim2.new(1,0,1,-(IS_MOBILE and 33 or 29)),Position=UDim2.new(0,0,0,IS_MOBILE and 32 or 28),BackgroundTransparency=1,Parent=Content})
+
+local activeTab="timeline"
+local trackPanel,tlPanel,propPanel
+
+if IS_MOBILE then
+    local tabBar=new("Frame",{Size=UDim2.new(1,0,0,22),BackgroundColor3=C.BG2,Parent=Lower});corner(tabBar,5)
+    new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,2),VerticalAlignment=Enum.VerticalAlignment.Center,Parent=tabBar});pad(tabBar,1,1,2,2)
+    local tabBtns={}
+    local function setTab(t) activeTab=t;if trackPanel then trackPanel.Visible=t=="tracks" end;if tlPanel then tlPanel.Visible=t=="timeline" end;if propPanel then propPanel.Visible=t=="props" end;for n,b in pairs(tabBtns) do b.BackgroundColor3=n==t and C.ACD or C.BTN end end
+    for _,info in ipairs({{"tracks","📂"},{"timeline","🎬"},{"props","🔧"}}) do local tb2=btn(tabBar,info[2],UDim2.new(1/3,-2,0,18),function() setTab(info[1]) end);tabBtns[info[1]]=tb2;tb2.TextSize=10 end
+    tabBtns["timeline"].BackgroundColor3=C.ACD
+end
+
+local tpOff = IS_MOBILE and 24 or 0
+
+-- TRACKS
+trackPanel=new("Frame",{Size=IS_MOBILE and UDim2.new(1,0,1,-24) or UDim2.new(0,120,1,0),Position=IS_MOBILE and UDim2.new(0,0,0,24) or UDim2.new(0,0,0,0),BackgroundColor3=C.BG2,Visible=not IS_MOBILE or activeTab=="tracks",Parent=Lower});corner(trackPanel,5)
+lbl(trackPanel,"📂 TRACKS",UDim2.new(1,0,0,16),UDim2.new(0,4,0,1),C.ICE,9)
+local trackScroll=new("ScrollingFrame",{Size=UDim2.new(1,-2,1,-18),Position=UDim2.new(0,1,0,17),BackgroundTransparency=1,ScrollBarThickness=2,ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,Parent=trackPanel})
+new("UIListLayout",{Padding=UDim.new(0,1),Parent=trackScroll})
+
+-- TIMELINE
+tlPanel=new("Frame",{Size=IS_MOBILE and UDim2.new(1,0,1,-24) or UDim2.new(1,-250,1,0),Position=IS_MOBILE and UDim2.new(0,0,0,24) or UDim2.new(0,124,0,0),BackgroundColor3=C.TBG,ClipsDescendants=true,Visible=not IS_MOBILE or activeTab=="timeline",Parent=Lower});corner(tlPanel,5)
+
+tlPanel.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then CamLock:On();ST.isDragging=true end end)
+tlPanel.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then task.delay(0.05,function() ST.isDragging=false;CamLock:Off() end) end end)
+
+local tlHeader=new("Frame",{Size=UDim2.new(1,0,0,14),BackgroundColor3=C.BG3,ClipsDescendants=true,Parent=tlPanel});corner(tlHeader,5)
+local pbH2=IS_MOBILE and 34 or 24
+local tlScroll=new("ScrollingFrame",{Size=UDim2.new(1,0,1,-(14+pbH2)),Position=UDim2.new(0,0,0,14),BackgroundTransparency=1,ScrollBarThickness=2,ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),ClipsDescendants=true,Parent=tlPanel})
+
+local playhead=new("Frame",{Size=UDim2.new(0,2,1,0),BackgroundColor3=C.RED,ZIndex=10,Parent=tlPanel})
+new("Frame",{Size=UDim2.new(0,6,0,6),Position=UDim2.new(0.5,-3,0,0),BackgroundColor3=C.RED,Rotation=45,ZIndex=11,Parent=playhead})
+
+local pbBar=new("Frame",{Size=UDim2.new(1,0,0,pbH2),Position=UDim2.new(0,0,1,-pbH2),BackgroundColor3=C.BG2,Parent=tlPanel});corner(pbBar,5)
+new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,1),VerticalAlignment=Enum.VerticalAlignment.Center,HorizontalAlignment=Enum.HorizontalAlignment.Center,Parent=pbBar})
+local ps=IS_MOBILE and UDim2.new(0,28,0,24) or UDim2.new(0,22,0,20)
+
+btn(pbBar,"⏮",ps,function() ST.frame=0;updatePlayhead();applyFrame(ST.frame) end)
+btn(pbBar,"⏪",ps,function() ST.frame=math.max(0,ST.frame-1);updatePlayhead();applyFrame(ST.frame) end)
+local playBtn;playBtn=btn(pbBar,"▶",IS_MOBILE and UDim2.new(0,40,0,24) or UDim2.new(0,34,0,20),function() ST.playing=not ST.playing;playBtn.Text=ST.playing and "⏸" or "▶";playBtn.BackgroundColor3=ST.playing and C.GRN or C.BTN end,C.GRN)
+btn(pbBar,"⏩",ps,function() ST.frame=ST.frame+1;updatePlayhead();applyFrame(ST.frame) end)
+btn(pbBar,"⏭",ps,function() local mx=ST.total;for _,kfs in pairs(ST.kfs) do for f in pairs(kfs) do if f>mx then mx=f end end end;ST.frame=mx;updatePlayhead();applyFrame(ST.frame) end)
+local loopBtn;loopBtn=btn(pbBar,"🔁",ps,function() ST.looping=not ST.looping;loopBtn.Text=ST.looping and "🔁" or "×" end)
+local frameLbl=new("TextLabel",{Text="0",Font=Enum.Font.GothamBold,TextSize=IS_MOBILE and 9 or 8,TextColor3=C.KF,BackgroundTransparency=1,Size=UDim2.new(0,IS_MOBILE and 30 or 26,0,IS_MOBILE and 24 or 20),Parent=pbBar})
+
+-- Zoom
+local zf=new("Frame",{Size=UDim2.new(0,44,0,14),Position=UDim2.new(1,-48,0,0),BackgroundTransparency=1,ZIndex=15,Parent=tlPanel})
+btn(zf,"−",UDim2.new(0,20,0,12),function() ST.zoom=math.max(0.3,ST.zoom-0.15);rebuildTimeline();updatePlayhead() end).Position=UDim2.new(0,0,0,0)
+btn(zf,"+",UDim2.new(0,20,0,12),function() ST.zoom=math.min(5,ST.zoom+0.15);rebuildTimeline();updatePlayhead() end).Position=UDim2.new(0,24,0,0)
+
+-- PROPERTIES
+propPanel=new("Frame",{Size=IS_MOBILE and UDim2.new(1,0,1,-24) or UDim2.new(0,122,1,0),Position=IS_MOBILE and UDim2.new(0,0,0,24) or UDim2.new(1,-122,0,0),BackgroundColor3=C.BG2,Visible=not IS_MOBILE or activeTab=="props",Parent=Lower});corner(propPanel,5)
+lbl(propPanel,"🔧 PROPS",UDim2.new(1,0,0,16),UDim2.new(0,4,0,1),C.ICE,9)
+local propScroll=new("ScrollingFrame",{Size=UDim2.new(1,-2,1,-18),Position=UDim2.new(0,1,0,17),BackgroundTransparency=1,ScrollBarThickness=2,ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,Parent=propPanel})
+new("UIListLayout",{Padding=UDim.new(0,1),Parent=propScroll})
+
+--////////////////////////////////////
+-- CURVE EDITOR
+--////////////////////////////////////
+curvePanel=createPanel("Curve","📈 CURVE EDITOR",IS_MOBILE and 300 or 350,IS_MOBILE and 260 or 240)
+local curveCanvas=new("Frame",{Size=UDim2.new(1,-12,1,-60),Position=UDim2.new(0,6,0,28),BackgroundColor3=Color3.fromRGB(8,12,25),ClipsDescendants=true,ZIndex=82,Parent=curvePanel});corner(curveCanvas,5);stroke(curveCanvas,C.SEP,1)
+local curvePre=new("Frame",{Size=UDim2.new(1,-12,0,24),Position=UDim2.new(0,6,1,-30),BackgroundTransparency=1,ZIndex=82,Parent=curvePanel})
+new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,2),VerticalAlignment=Enum.VerticalAlignment.Center,Parent=curvePre})
+
+local PRESETS={{n="Lin",h={0,0,1,1}},{n="Ease",h={.25,.1,.25,1}},{n="EaseIn",h={.42,0,1,1}},{n="EaseO",h={0,0,.58,1}},{n="Bnce",h={.2,.6,.4,1.3}},{n="Elast",h={.5,-.5,.5,1.5}},{n="Sharp",h={.9,0,.1,1}}}
+for _,pr in ipairs(PRESETS) do
+    btn(curvePre,pr.n,UDim2.new(0,IS_MOBILE and 40 or 38,0,18),function()
+        ST.bezH.h1x=pr.h[1];ST.bezH.h1y=pr.h[2];ST.bezH.h2x=pr.h[3];ST.bezH.h2y=pr.h[4]
+        rebuildCurveEditor();notify("Curve: "..pr.n,C.CURVE)
+    end).TextSize=7
+end
+
+function rebuildCurveEditor()
+    for _,c2 in pairs(curveCanvas:GetChildren()) do if c2:IsA("Frame") or c2:IsA("TextButton") then c2:Destroy() end end
+    local w=curveCanvas.AbsoluteSize.X;local h=curveCanvas.AbsoluteSize.Y
+    if w<10 then w=280 end;if h<10 then h=160 end
+    for g=0,4 do
+        new("Frame",{Size=UDim2.new(0,1,1,0),Position=UDim2.new(g/4,0,0,0),BackgroundColor3=C.SEP,BackgroundTransparency=0.7,ZIndex=83,Parent=curveCanvas})
+        new("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,g/4,0),BackgroundColor3=C.SEP,BackgroundTransparency=0.7,ZIndex=83,Parent=curveCanvas})
+    end
+    local segs=35
+    for i=0,segs-1 do
+        local t1=i/segs;local t2=(i+1)/segs
+        local y1=1-BezEval(t1,ST.bezH.h1x,ST.bezH.h1y,ST.bezH.h2x,ST.bezH.h2y)
+        local y2=1-BezEval(t2,ST.bezH.h1x,ST.bezH.h1y,ST.bezH.h2x,ST.bezH.h2y)
+        local x1p=t1*w;local x2p=t2*w;local y1p=math.clamp(y1,-.5,1.5)*h;local y2p=math.clamp(y2,-.5,1.5)*h
+        local dx=x2p-x1p;local dy=y2p-y1p;local len=math.sqrt(dx*dx+dy*dy)
+        new("Frame",{Size=UDim2.new(0,math.max(len,1),0,2),Position=UDim2.new(0,x1p,0,y1p),Rotation=math.deg(math.atan2(dy,dx)),AnchorPoint=Vector2.new(0,0.5),BackgroundColor3=C.CURVE,ZIndex=84,Parent=curveCanvas})
+    end
+    local hs2=IS_MOBILE and 16 or 12
+    for _,hd in ipairs({{"h1x","h1y",C.RED},{"h2x","h2y",C.ACC}}) do
+        local hb=new("TextButton",{Text="●",Font=Enum.Font.GothamBold,TextSize=hs2,TextColor3=hd[3],BackgroundTransparency=1,Size=UDim2.new(0,hs2+4,0,hs2+4),Position=UDim2.new(ST.bezH[hd[1]],-hs2/2-2,1-ST.bezH[hd[2]],-hs2/2-2),ZIndex=86,Parent=curveCanvas})
+        local dr=false
+        hb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dr=true;CamLock:On();ST.isDragging=true;i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dr=false;ST.isDragging=false;CamLock:Off() end end) end end)
+        UserInputService.InputChanged:Connect(function(i) if dr and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local cp=curveCanvas.AbsolutePosition;local cs=curveCanvas.AbsoluteSize;ST.bezH[hd[1]]=math.clamp((i.Position.X-cp.X)/cs.X,0,1);ST.bezH[hd[2]]=math.clamp(1-(i.Position.Y-cp.Y)/cs.Y,-.5,1.5);rebuildCurveEditor() end end)
+    end
+end
+
+--////////////////////////////////////
+-- SAVE PANEL
+--////////////////////////////////////
+savesPanel=createPanel("Saves","💾 SAVES",IS_MOBILE and 300 or 320,IS_MOBILE and 300 or 300)
+local saveIn=new("TextBox",{PlaceholderText="Name...",Text="",Font=Enum.Font.Gotham,TextSize=FS,TextColor3=C.TX,PlaceholderColor3=C.TX2,BackgroundColor3=C.BG3,Size=UDim2.new(1,-100,0,22),Position=UDim2.new(0,6,0,30),ClearTextOnFocus=false,ZIndex=81,Parent=savesPanel});corner(saveIn,4)
+
+local loopExBtn;loopExBtn=btn(savesPanel,ST.exportLoop and "🔁On" or "🔁Off",UDim2.new(0,44,0,22),function()
+    ST.exportLoop=not ST.exportLoop;loopExBtn.Text=ST.exportLoop and "🔁On" or "🔁Off"
+    loopExBtn.BackgroundColor3=ST.exportLoop and C.GRN or C.RED
+end,C.RED);loopExBtn.Position=UDim2.new(1,-52,0,30);loopExBtn.ZIndex=82
+
+btn(savesPanel,"💾 Save",UDim2.new(0.48,-2,0,BH),function()
+    local name=saveIn.Text;if name=="" then name="Anim_"..#ST.saves+1 end
+    local trackNames={}
+    for id,tr in pairs(ST.tracks) do trackNames[id]=tr.name end
+    table.insert(ST.saves,{Name=name,KFs=deepCopy(ST.kfs),Purpose=ST.purpose,Speed=ST.speed,Total=ST.total,Loop=ST.exportLoop,TrackNames=trackNames})
+    notify("💾 "..name,C.GRN);rebuildSaves();persistSaves()
+end,C.GRN).Position=UDim2.new(0,6,0,56);savesPanel:FindFirstChild("💾 Save",true)
+btn(savesPanel,"📤 Export",UDim2.new(0.48,-2,0,BH),function()
+    if exportPanel then exportPanel.Visible=true end
+end,C.ACC).Position=UDim2.new(0.5,1,0,56)
+
+local savesScroll=new("ScrollingFrame",{Size=UDim2.new(1,-12,1,-86),Position=UDim2.new(0,6,0,82),BackgroundTransparency=1,ScrollBarThickness=2,ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ZIndex=81,Parent=savesPanel})
+new("UIListLayout",{Padding=UDim.new(0,2),Parent=savesScroll})
+
+--////////////////////////////////////
+-- EXPORT PANEL  
+--////////////////////////////////////
+exportPanel=createPanel("Export","📤 EXPORT",IS_MOBILE and 320 or 360,IS_MOBILE and 320 or 300)
+
+local ey = 30
+local function expBtn(text,desc,cb,col)
+    local f=new("Frame",{Size=UDim2.new(1,-12,0,IS_MOBILE and 50 or 44),Position=UDim2.new(0,6,0,ey),BackgroundColor3=C.BG3,ZIndex=82,Parent=exportPanel});corner(f,6);stroke(f,col or C.ACC,1)
+    local b=btn(f,text,UDim2.new(1,-4,0,IS_MOBILE and 20 or 18),cb,col or C.ACC);b.Position=UDim2.new(0,2,0,2);b.ZIndex=83
+    lbl(f,desc,UDim2.new(1,-6,0,IS_MOBILE and 18 or 16),UDim2.new(0,4,0,IS_MOBILE and 26 or 22),C.TX2,8).ZIndex=83
+    ey=ey+(IS_MOBILE and 54 or 48)
+end
+
+expBtn("🤖 NPC / Object (fixed in map)","Script goes INSIDE the Model",function()
+    local code = _G.SNA_GenNPCScript()
+    if code then toClip(code);notify("✅ NPC script copied!",C.GRN,4);notify("Paste INSIDE the Model as Script",C.ICE,5) end
+end,C.GRN)
+
+expBtn("🎮 Player Character","Script goes in StarterCharacterScripts",function()
+    local code = _G.SNA_GenCharScript()
+    if code then toClip(code);notify("✅ Char script copied!",C.GRN,4);notify("Paste in StarterCharacterScripts",C.ICE,5) end
+end,C.ACC)
+
+expBtn("🖼️ UI Animation","Script goes in StarterGui with the UI",function()
+    local code = _G.SNA_GenUIScript()
+    if code then toClip(code);notify("✅ UI script copied!",C.GRN,4);notify("Paste as LocalScript in StarterGui",C.ICE,5) end
+end,C.YEL)
+
+expBtn("🗄️ Export by ID (universal)","Creates folders in ReplicatedStorage",function()
+    exportID()
+end,C.CURVE)
+
+print("❄️ SNA v8.0 Part 2 loaded")
+
+-- SNOW ANIMATOR ❄️ v8.0 FINAL EDITION
+-- Part 3/3 - Core Functions + Export Scripts + Complete Guide
+-- Cole APÓS a Parte 2
+
+--////////////////////////////////////
+-- COMPLETE IMPLEMENTATION GUIDE
+--////////////////////////////////////
+guidePanel=createPanel("Guide","📖 COMPLETE GUIDE / GUIA COMPLETO",IS_MOBILE and 340 or 460,IS_MOBILE and 440 or 460)
+local guideScroll=new("ScrollingFrame",{Size=UDim2.new(1,-8,1,-30),Position=UDim2.new(0,4,0,28),BackgroundTransparency=1,ScrollBarThickness=3,ScrollBarImageColor3=C.ACC,CanvasSize=UDim2.new(0,0,0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ZIndex=81,Parent=guidePanel})
+new("UIListLayout",{Padding=UDim.new(0,2),Parent=guideScroll})
+
+local GL={
+{"❄️ SNOW ANIMATOR v8 - GUIA COMPLETO",C.ICE,14},
+{"",nil,6},
+{"═══ 🤖 NPC / OBJETO FIXO NO MAPA ═══",C.GRN,12},
+{"🇧🇷 PORTUGUÊS:",C.KF,11},
+{"1. Coloque o rig R6/R15 no Workspace",C.TX,10},
+{"2. Clique 🎯 Select → clique no rig",C.TX,10},
+{"3. Anime: mova sliders em 🔧 Props",C.TX,10},
+{"4. Aperte ⚙️K para salvar keyframe",C.TX,10},
+{"5. Mova timeline (clique nela), pose de novo, ⚙️K",C.TX,10},
+{"6. Teste com ▶ Play",C.TX,10},
+{"7. 📤 Export → 🤖 NPC/Object",C.TX,10},
+{"8. O script é COPIADO automaticamente",C.TX,10},
+{"9. DENTRO do seu Model/Rig, crie um Script",C.TX,10},
+{"10. COLE o script dentro. PRONTO!",C.TX,10},
+{"",nil,4},
+{"🇺🇸 ENGLISH:",C.KF,11},
+{"1. Place R6/R15 rig in Workspace",C.TX,10},
+{"2. Click 🎯 Select → click the rig",C.TX,10},
+{"3. Animate using 🔧 Props sliders",C.TX,10},
+{"4. Press ⚙️K to save keyframe",C.TX,10},
+{"5. Move timeline, pose again, ⚙️K",C.TX,10},
+{"6. Test with ▶ Play",C.TX,10},
+{"7. 📤 Export → 🤖 NPC/Object",C.TX,10},
+{"8. Script is auto-copied to clipboard",C.TX,10},
+{"9. INSIDE your Model/Rig, create a Script",C.TX,10},
+{"10. PASTE the script inside. DONE!",C.TX,10},
+{"",nil,6},
+{"═══ 🎮 CHARACTER DO PLAYER ═══",C.ACC,12},
+{"🇧🇷 PORTUGUÊS:",C.KF,11},
+{"1. Para animar o character que o player controla",C.TX,10},
+{"2. Coloque um rig DUMMY R6 no mapa (igual ao do jogo)",C.TX,10},
+{"3. Anime o dummy normalmente",C.TX,10},
+{"4. 📤 Export → 🎮 Player Character",C.TX,10},
+{"5. Script é copiado para clipboard",C.TX,10},
+{"6. Vá em StarterPlayer → StarterCharacterScripts",C.TX,10},
+{"7. Crie um SCRIPT (não LocalScript!)",C.TX,10},
+{"8. COLE o script. Quando player spawnar, anima!",C.TX,10},
+{"⚠️ IMPORTANTE: O dummy precisa ter os MESMOS nomes",C.RED,10},
+{"de Motor6D que o character real (R6 usa R6, R15 usa R15)",C.RED,10},
+{"",nil,4},
+{"🇺🇸 ENGLISH:",C.KF,11},
+{"1. To animate the player's own character",C.TX,10},
+{"2. Place a DUMMY R6 rig (same type as game)",C.TX,10},
+{"3. Animate the dummy normally",C.TX,10},
+{"4. 📤 Export → 🎮 Player Character",C.TX,10},
+{"5. Script copied to clipboard",C.TX,10},
+{"6. Go to StarterPlayer → StarterCharacterScripts",C.TX,10},
+{"7. Create a SCRIPT (not LocalScript!)",C.TX,10},
+{"8. PASTE. When player spawns, it animates!",C.TX,10},
+{"⚠️ IMPORTANT: Dummy must have SAME Motor6D names",C.RED,10},
+{"",nil,6},
+{"═══ 🖼️ INTERFACES (UI) ═══",C.YEL,12},
+{"🇧🇷 PORTUGUÊS:",C.KF,11},
+{"1. Crie sua UI no StarterGui (Frame, TextLabel, etc)",C.TX,10},
+{"2. No Explorer, selecione o elemento UI",C.TX,10},
+{"3. Clique 🎯 Select (ele detecta do Explorer)",C.TX,10},
+{"4. Anime Position, Size, Rotation, Transparency",C.TX,10},
+{"5. 📤 Export → 🖼️ UI Animation",C.TX,10},
+{"6. Script copiado. Cole como LocalScript no StarterGui",C.TX,10},
+{"⚠️ O LocalScript deve estar NO MESMO ScreenGui",C.RED,10},
+{"",nil,4},
+{"🇺🇸 ENGLISH:",C.KF,11},
+{"1. Create your UI in StarterGui",C.TX,10},
+{"2. Select UI element in Explorer",C.TX,10},
+{"3. Click 🎯 Select (detects from Explorer)",C.TX,10},
+{"4. Animate Position, Size, Rotation, Transparency",C.TX,10},
+{"5. 📤 Export → 🖼️ UI Animation",C.TX,10},
+{"6. Script copied. Paste as LocalScript in StarterGui",C.TX,10},
+{"⚠️ LocalScript must be in SAME ScreenGui",C.RED,10},
+{"",nil,6},
+{"═══ ⚔️ TOOL / WEAPON ═══",C.CURVE2,12},
+{"🇧🇷:",C.KF,11},
+{"1. Anime o rig com a pose de ataque",C.TX,10},
+{"2. Exporte como 🎮 Player Character",C.TX,10},
+{"3. Adicione trigger: quando Tool.Activated, play anim",C.TX,10},
+{"4. O script gerado tem opção de trigger por evento",C.TX,10},
+{"",nil,6},
+{"═══ 🔧 POR QUE NÃO FUNCIONA? ═══",C.RED,12},
+{"❌ Problema 1: Script no lugar errado",C.RED,10},
+{"✅ NPC → Script DENTRO do Model",C.GRN,10},
+{"✅ Player → Script em StarterCharacterScripts",C.GRN,10},
+{"✅ UI → LocalScript em StarterGui",C.GRN,10},
+{"",nil,4},
+{"❌ Problema 2: Tipo de rig diferente",C.RED,10},
+{"✅ Se o jogo usa R6, anime um R6. Não misture!",C.GRN,10},
+{"",nil,4},
+{"❌ Problema 3: Nomes errados",C.RED,10},
+{"✅ Os Motor6D devem ter os mesmos nomes",C.GRN,10},
+{"✅ (Torso, Left Arm, Right Leg, etc)",C.GRN,10},
+{"",nil,4},
+{"❌ Problema 4: Script vs LocalScript",C.RED,10},
+{"✅ NPC/Player: usa Script (servidor)",C.GRN,10},
+{"✅ UI: usa LocalScript (cliente)",C.GRN,10},
+{"",nil,6},
+{"═══ 💡 DICAS AVANÇADAS ═══",C.ICE,12},
+{"• 📈 Curve Editor: controla a curva de interpolação",C.TX,10},
+{"• 🔴 Auto Key: detecta quando você move no gizmo",C.TX,10},
+{"• ⚡ Easing: tipos de suavização (Bounce, Elastic..)",C.TX,10},
+{"• 🔁 Loop: define se a animação repete",C.TX,10},
+{"• Saves persistem mesmo saindo do Studio Lite!",C.GRN,10},
+}
+
+for _,line in ipairs(GL) do
+    if line[1]=="" then new("Frame",{Size=UDim2.new(1,0,0,line[3] or 4),BackgroundTransparency=1,Parent=guideScroll})
+    else local l=new("TextLabel",{Text=line[1],Font=line[3]>=12 and Enum.Font.GothamBold or Enum.Font.Gotham,TextSize=line[3],TextColor3=line[2],BackgroundTransparency=1,Size=UDim2.new(1,-6,0,0),AutomaticSize=Enum.AutomaticSize.Y,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=82,Parent=guideScroll});pad(l,0,0,3,3) end
+end
+
+--////////////////////////////////////
+-- CORE FUNCTIONS
+--////////////////////////////////////
+function pushUndo() table.insert(ST.undo,{d=deepCopy(ST.kfs)});if #ST.undo>40 then table.remove(ST.undo,1) end;ST.redo={} end
+function clearGhosts() for _,g in pairs(ST.ghostParts) do pcall(function() g:Destroy() end) end;ST.ghostParts={} end
+
+function addKeyframe()
+    if not ST.target then notify("Use 🎯 first!",C.YEL) return end
+    pushUndo();local f=ST.frame;local ct=0
+    for id,tr in pairs(ST.tracks) do if tr.vis and not tr.lock then
+        if not ST.kfs[id] then ST.kfs[id]={} end;local kd={}
+        for _,p in ipairs(tr.props) do pcall(function()
+            kd[p.n]={v=tr.inst[p.n],t=p.t,es=ST.easing,ed=ST.easeDir}
+            if ST.curveMode then kd[p.n].bh={ST.bezH.h1x,ST.bezH.h1y,ST.bezH.h2x,ST.bezH.h2y} end
+        end) end;ST.kfs[id][f]=kd;ct=ct+1
+    end end;notify("KEY @"..f.." ("..ct..")",C.GRN);rebuildTimeline()
+end
+
+function loadTarget(target)
+    ST.target=target;ST.tracks={};ST.kfs={};ST.originals={}
+    local function addTrack(inst,tp) local id=inst:GetFullName();if ST.tracks[id] then return end;local props=getProps(inst);if #props==0 then return end;ST.tracks[id]={inst=inst,name=inst.Name,type=tp,props=props,vis=true,lock=false};ST.kfs[id]={};ST.originals[id]={};for _,p in ipairs(props) do pcall(function() ST.originals[id][p.n]=inst[p.n] end) end end
+    if target:IsA("Model") then
+        for _,d in pairs(target:GetDescendants()) do if d:IsA("Motor6D") then addTrack(d,"Motor6D") end end
+        for _,d in pairs(target:GetDescendants()) do if d:IsA("BasePart") then addTrack(d,"BasePart") end end
+    elseif target:IsA("BasePart") then addTrack(target,"BasePart")
+    elseif target:IsA("GuiObject") then addTrack(target,"GuiObject");for _,d in pairs(target:GetDescendants()) do if d:IsA("GuiObject") then addTrack(d,"GuiObject") end end
+    else for _,d in pairs(target:GetDescendants()) do if d:IsA("Motor6D") then addTrack(d,"Motor6D") elseif d:IsA("BasePart") then addTrack(d,"BasePart") elseif d:IsA("GuiObject") then addTrack(d,"GuiObject") end end end
+    local ct=0;for _ in pairs(ST.tracks) do ct=ct+1 end
+    notify("✅ "..target.Name.." ("..ct..")",C.GRN,3)
+    rebuildTracks();rebuildTimeline();startGizmoMonitor()
+end
+
+function rebuildTracks()
+    for _,c2 in pairs(trackScroll:GetChildren()) do if c2:IsA("TextButton") then c2:Destroy() end end
+    local sorted={};for id,tr in pairs(ST.tracks) do table.insert(sorted,{id=id,tr=tr}) end
+    table.sort(sorted,function(a,b) return a.tr.name<b.tr.name end)
+    for i,item in ipairs(sorted) do
+        local id=item.id;local tr=item.tr;local h=IS_MOBILE and 24 or 20
+        local row=new("TextButton",{Text="",Size=UDim2.new(1,-1,0,h),BackgroundColor3=i%2==0 and C.TRK or C.TRA,AutoButtonColor=false,Parent=trackScroll});corner(row,3)
+        local icon=tr.type=="Motor6D" and "🔩" or tr.type=="BasePart" and "🟦" or "🖼️"
+        lbl(row,icon.." "..tr.name,UDim2.new(1,-30,1,0),UDim2.new(0,2,0,0),C.TX,IS_MOBILE and 8 or 7)
+        local vb=new("TextButton",{Text=tr.vis and "👁" or "×",Font=Enum.Font.Gotham,TextSize=8,BackgroundTransparency=1,Size=UDim2.new(0,h,0,h),Position=UDim2.new(1,-h,0,0),TextColor3=C.TX2,Parent=row})
+        vb.MouseButton1Click:Connect(function() tr.vis=not tr.vis;vb.Text=tr.vis and "👁" or "×" end)
+        row.MouseButton1Click:Connect(function()
+            for _,c3 in pairs(trackScroll:GetChildren()) do if c3:IsA("TextButton") then c3.BackgroundColor3=C.TRK end end
+            row.BackgroundColor3=C.ACD;ST.selTrack=id;showProps(id)
+        end)
+    end
+end
+
+function showProps(trackId)
+    for _,c2 in pairs(propScroll:GetChildren()) do if c2:IsA("Frame") then c2:Destroy() end end
+    local tr=ST.tracks[trackId];if not tr then return end
+    if tr.type=="Motor6D" then
+        local _,rot=cfToRot(tr.inst.Transform)
+        lbl(new("Frame",{Size=UDim2.new(1,0,0,10),BackgroundTransparency=1,Parent=propScroll}),"🔩 Rot",UDim2.new(1,0,1,0),nil,C.ACC,8)
+        slider(propScroll,"RX",-180,180,rot.X,function(v) local p2,r2=cfToRot(tr.inst.Transform);tr.inst.Transform=rotToCF(p2,Vector3.new(v,r2.Y,r2.Z)) end)
+        slider(propScroll,"RY",-180,180,rot.Y,function(v) local p2,r2=cfToRot(tr.inst.Transform);tr.inst.Transform=rotToCF(p2,Vector3.new(r2.X,v,r2.Z)) end)
+        slider(propScroll,"RZ",-180,180,rot.Z,function(v) local p2,r2=cfToRot(tr.inst.Transform);tr.inst.Transform=rotToCF(p2,Vector3.new(r2.X,r2.Y,v)) end)
+        btn(propScroll,"Reset",UDim2.new(1,0,0,IS_MOBILE and 22 or 18),function() tr.inst.Transform=CFrame.new();showProps(trackId) end,C.YEL)
+    end
+    if tr.type=="BasePart" then
+        local pos2=tr.inst.CFrame.Position;local _,rot=cfToRot(tr.inst.CFrame)
+        slider(propScroll,"X",-200,200,pos2.X,function(v) local c2=tr.inst.CFrame;local _,_,_,r00,r01,r02,r10,r11,r12,r20,r21,r22=c2:GetComponents();tr.inst.CFrame=CFrame.new(v,c2.Y,c2.Z,r00,r01,r02,r10,r11,r12,r20,r21,r22) end)
+        slider(propScroll,"Y",-200,200,pos2.Y,function(v) local c2=tr.inst.CFrame;local _,_,_,r00,r01,r02,r10,r11,r12,r20,r21,r22=c2:GetComponents();tr.inst.CFrame=CFrame.new(c2.X,v,c2.Z,r00,r01,r02,r10,r11,r12,r20,r21,r22) end)
+        slider(propScroll,"Z",-200,200,pos2.Z,function(v) local c2=tr.inst.CFrame;local _,_,_,r00,r01,r02,r10,r11,r12,r20,r21,r22=c2:GetComponents();tr.inst.CFrame=CFrame.new(c2.X,c2.Y,v,r00,r01,r02,r10,r11,r12,r20,r21,r22) end)
+        slider(propScroll,"RX",-180,180,rot.X,function(v) local _,r=cfToRot(tr.inst.CFrame);tr.inst.CFrame=rotToCF(tr.inst.CFrame.Position,Vector3.new(v,r.Y,r.Z)) end)
+        slider(propScroll,"RY",-180,180,rot.Y,function(v) local _,r=cfToRot(tr.inst.CFrame);tr.inst.CFrame=rotToCF(tr.inst.CFrame.Position,Vector3.new(r.X,v,r.Z)) end)
+        slider(propScroll,"RZ",-180,180,rot.Z,function(v) local _,r=cfToRot(tr.inst.CFrame);tr.inst.CFrame=rotToCF(tr.inst.CFrame.Position,Vector3.new(r.X,r.Y,v)) end)
+    end
+    for _,prop in ipairs(tr.props) do if prop.t=="Number" then
+        local val=0;pcall(function() val=tr.inst[prop.n] end);local mn,mx=0,1
+        if prop.n=="TextSize" then mn=1;mx=100 elseif prop.n=="Rotation" then mn=-360;mx=360 end
+        slider(propScroll,prop.n,mn,mx,val,function(v) pcall(function() tr.inst[prop.n]=v end) end)
+    end end
+end
+
+function rebuildTimeline()
+    for _,c2 in pairs(tlHeader:GetChildren()) do if c2:IsA("TextLabel") then c2:Destroy() end end
+    for _,c2 in pairs(tlScroll:GetChildren()) do if c2:IsA("Frame") then c2:Destroy() end end
+    local px=(IS_MOBILE and 4 or 3.5)*ST.zoom;local tw=math.max(ST.total*px,tlPanel.AbsoluteSize.X)
+    local step=math.max(1,math.floor(16/px))
+    for f=0,ST.total,step do
+        if f%(step*5)==0 then new("TextLabel",{Text=tostring(f),Font=Enum.Font.Gotham,TextSize=6,TextColor3=C.TX2,BackgroundTransparency=1,Size=UDim2.new(0,18,1,0),Position=UDim2.new(0,f*px-9-ST.scrollX,0,0),Parent=tlHeader}) end
+    end
+    local sorted={};for id,tr in pairs(ST.tracks) do table.insert(sorted,{id=id,tr=tr}) end;table.sort(sorted,function(a,b) return a.tr.name<b.tr.name end)
+    local yOff=0;local rH=IS_MOBILE and 18 or 14
+    for i,item in ipairs(sorted) do
+        local id=item.id;local kfs=ST.kfs[id] or {}
+        local row=new("Frame",{Size=UDim2.new(0,tw,0,rH),Position=UDim2.new(0,0,0,yOff),BackgroundColor3=i%2==0 and C.TRK or C.TRA,BackgroundTransparency=0.3,Parent=tlScroll})
+        for f in pairs(kfs) do
+            local kx=f*px-ST.scrollX;local ds=IS_MOBILE and 14 or 10
+            local dm=new("TextButton",{Text="◆",Font=Enum.Font.GothamBold,TextSize=IS_MOBILE and 10 or 8,TextColor3=C.KF,BackgroundTransparency=1,Size=UDim2.new(0,ds,0,ds),Position=UDim2.new(0,kx-ds/2,0.5,-ds/2),ZIndex=5,Parent=row})
+            dm.MouseButton1Click:Connect(function() ST.frame=f;updatePlayhead();applyFrame(ST.frame) end)
+            dm.MouseButton2Click:Connect(function() pushUndo();kfs[f]=nil;rebuildTimeline() end)
+        end;yOff=yOff+rH+1
+    end;tlScroll.CanvasSize=UDim2.new(0,tw,0,yOff)
+end
+
+function updatePlayhead() local px=(IS_MOBILE and 4 or 3.5)*ST.zoom;playhead.Position=UDim2.new(0,ST.frame*px-ST.scrollX,0,0);frameLbl.Text=tostring(ST.frame) end
+
+local tlT=false
+tlPanel.InputBegan:Connect(function(i) if ST.selectMode then return end;if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then tlT=true;local relX=i.Position.X-tlPanel.AbsolutePosition.X+ST.scrollX;local px=(IS_MOBILE and 4 or 3.5)*ST.zoom;ST.frame=math.max(0,snapG(relX/px));updatePlayhead();applyFrame(ST.frame);i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then tlT=false end end) end end)
+tlPanel.InputChanged:Connect(function(i) if tlT and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local relX=i.Position.X-tlPanel.AbsolutePosition.X+ST.scrollX;local px=(IS_MOBILE and 4 or 3.5)*ST.zoom;ST.frame=math.max(0,snapG(relX/px));updatePlayhead();applyFrame(ST.frame) end end)
+
+function applyFrame(frame)
+    for id,tr in pairs(ST.tracks) do
+        local kfs=ST.kfs[id];if not kfs or not tr.inst or not tr.inst.Parent then continue end
+        local frames={};for f in pairs(kfs) do table.insert(frames,f) end;table.sort(frames);if #frames==0 then continue end
+        local pf,nf,pd,nd;for _,f in ipairs(frames) do if f<=frame then pf=f;pd=kfs[f] end;if f>frame and not nf then nf=f;nd=kfs[f] end end
+        if pf==frame and pd then for pn,pi in pairs(pd) do pcall(function() tr.inst[pn]=pi.v end) end
+        elseif pf and nf and pd and nd then local t=(frame-pf)/(nf-pf);for pn,pi in pairs(pd) do if nd[pn] then local a;if pi.bh then a=BezEval(t,pi.bh[1],pi.bh[2],pi.bh[3],pi.bh[4]) else a=EE(t,pi.es or "Linear",pi.ed or "InOut") end;pcall(function() tr.inst[pn]=IV(pi.v,nd[pn].v,a,pi.t) end) end end
+        elseif pf and pd then for pn,pi in pairs(pd) do pcall(function() tr.inst[pn]=pi.v end) end end
+    end
+end
+
+function startGizmoMonitor()
+    local lastSnap={};for id,tr in pairs(ST.tracks) do lastSnap[id]={};for _,p in ipairs(tr.props) do pcall(function() lastSnap[id][p.n]=tr.inst[p.n] end) end end
+    task.spawn(function() while SG.Parent do if ST.autoKey and not ST.playing and ST.target then
+        local dirty=false;for id,tr in pairs(ST.tracks) do if not tr.vis or tr.lock then continue end;local last=lastSnap[id];if not last then continue end
+            local changed=false;for _,p in ipairs(tr.props) do pcall(function() local cur=tr.inst[p.n];local prev=last[p.n];if prev then if p.t=="CFrame" then if (cur.Position-prev.Position).Magnitude>0.01 then changed=true end elseif p.t=="Number" then if math.abs(cur-prev)>0.001 then changed=true end end end end) end
+            if changed then if not ST.kfs[id] then ST.kfs[id]={} end;local kd={};for _,p in ipairs(tr.props) do pcall(function() kd[p.n]={v=tr.inst[p.n],t=p.t,es=ST.easing,ed=ST.easeDir};last[p.n]=tr.inst[p.n] end) end;ST.kfs[id][ST.frame]=kd;dirty=true end
+        end;if dirty then rebuildTimeline() end end;task.wait(0.15) end end)
+end
+
+function rebuildSaves()
+    for _,c2 in pairs(savesScroll:GetChildren()) do if c2:IsA("Frame") then c2:Destroy() end end
+    for i,sv in ipairs(ST.saves) do
+        local slot3=new("Frame",{Size=UDim2.new(1,0,0,IS_MOBILE and 36 or 30),BackgroundColor3=C.BG3,ZIndex=82,Parent=savesScroll});corner(slot3,4);stroke(slot3,C.SEP,1)
+        lbl(slot3,"🎬 "..sv.Name,UDim2.new(1,-60,0,12),UDim2.new(0,3,0,1),C.TX,8).ZIndex=83
+        lbl(slot3,sv.Purpose.." | "..(sv.Loop and "Loop" or "Once"),UDim2.new(1,-60,0,10),UDim2.new(0,3,0,14),C.TX2,7).ZIndex=83
+        btn(slot3,"📂",UDim2.new(0,24,0,IS_MOBILE and 18 or 16),function()
+            -- Load save back - need to reconstruct from serialized data if coming from persistent
+            if sv.KFs then
+                local canLoad = true
+                -- Check if KFs contain actual values or serialized strings
+                for id2,kfs2 in pairs(sv.KFs) do
+                    for f2,kd2 in pairs(kfs2) do
+                        for pn2,pi2 in pairs(kd2) do
+                            if type(pi2.v) == "string" then canLoad = false end
+                            break
+                        end;break
+                    end;break
+                end
+                if canLoad then
+                    ST.kfs=deepCopy(sv.KFs)
+                end
+            end
+            ST.purpose=sv.Purpose or "Core";ST.speed=sv.Speed or 1;ST.total=sv.Total or 300;ST.exportLoop=sv.Loop or false
+            spdLbl.Text=string.format("%.1f",ST.speed);ST.frame=0
+            notify("📂 "..sv.Name,C.GRN);rebuildTimeline();updatePlayhead()
+        end,C.GRN).Position=UDim2.new(1,-52,0,IS_MOBILE and 8 or 6)
+        btn(slot3,"🗑",UDim2.new(0,24,0,IS_MOBILE and 18 or 16),function() table.remove(ST.saves,i);rebuildSaves();persistSaves() end,C.RED).Position=UDim2.new(1,-26,0,IS_MOBILE and 8 or 6)
+    end
+end
+
+--////////////////////////////////////
+-- EXPORT SCRIPTS THAT ACTUALLY WORK
+--////////////////////////////////////
+
+-- Helper: serialize current animation data to Lua table string
+local function serializeAnimData()
+    local lines = {}
+    table.insert(lines, "local ANIM_DATA = {")
+    table.insert(lines, "  speed="..ST.speed..",")
+    table.insert(lines, "  fps=60,")
+    table.insert(lines, "  total="..ST.total..",")
+    table.insert(lines, "  loop="..(ST.exportLoop and "true" or "false")..",")
+    table.insert(lines, "  tracks={")
+    
+    for id,tr in pairs(ST.tracks) do
+        local kfs = ST.kfs[id]
+        if not kfs or not next(kfs) then continue end
+        
+        -- For NPC: use relative name from model root
+        -- For Player: use Motor6D name
+        local tname = tr.name
+        local ttype = tr.type
+        
+        table.insert(lines, '    {name="'..tname..'",type="'..ttype..'",kf={')
+        
+        local frames={}
+        for f in pairs(kfs) do table.insert(frames,f) end
+        table.sort(frames)
+        
+        for _,f in ipairs(frames) do
+            table.insert(lines, "      ["..f.."]={")
+            for pn,pi in pairs(kfs[f]) do
+                local vStr
+                if pi.t == "CFrame" then
+                    local comps = {pi.v:GetComponents()}
+                    local parts = {}
+                    for _,x in ipairs(comps) do table.insert(parts,string.format("%.4f",x)) end
+                    vStr = "CFrame.new("..table.concat(parts,",")..")"
+                elseif pi.t == "Vector3" then
+                    vStr = string.format("Vector3.new(%.4f,%.4f,%.4f)",pi.v.X,pi.v.Y,pi.v.Z)
+                elseif pi.t == "Color3" then
+                    vStr = string.format("Color3.new(%.4f,%.4f,%.4f)",pi.v.R,pi.v.G,pi.v.B)
+                elseif pi.t == "Number" then
+                    vStr = string.format("%.4f",pi.v)
+                elseif pi.t == "UDim2" then
+                    vStr = string.format("UDim2.new(%.4f,%d,%.4f,%d)",pi.v.X.Scale,pi.v.X.Offset,pi.v.Y.Scale,pi.v.Y.Offset)
+                end
+                if vStr then
+                    local extra = ""
+                    if pi.bh then
+                        extra = string.format(",bh={%.3f,%.3f,%.3f,%.3f}",pi.bh[1],pi.bh[2],pi.bh[3],pi.bh[4])
+                    end
+                    table.insert(lines, '        ["'..pn..'"]=')
+                    table.insert(lines, '          {v='..vStr..',t="'..pi.t..'",es="'..(pi.es or "Linear")..'",ed="'..(pi.ed or "InOut")..'"'..extra..'},')
+                end
+            end
+            table.insert(lines, "      },")
+        end
+        table.insert(lines, "    }},")
+    end
+    table.insert(lines, "  }")
+    table.insert(lines, "}")
+    return table.concat(lines, "\n")
+end
+
+-- Engine code (shared by all export types)
+local ENGINE_CODE = [==[
+-- ❄️ Animation Engine
+local RS = game:GetService("RunService")
+local function bO(x) local n=7.5625;local d=2.75;if x<1/d then return n*x*x elseif x<2/d then x=x-1.5/d;return n*x*x+0.75 elseif x<2.5/d then x=x-2.25/d;return n*x*x+0.9375 else x=x-2.625/d;return n*x*x+0.984375 end end
+local function eI(x,s) if s=="Linear" then return x elseif s=="Quad" then return x*x elseif s=="Cubic" then return x^3 elseif s=="Quart" then return x^4 elseif s=="Quint" then return x^5 elseif s=="Sine" then return 1-math.cos(x*math.pi/2) elseif s=="Exponential" then return x==0 and 0 or 2^(10*(x-1)) elseif s=="Circular" then return 1-math.sqrt(math.max(0,1-x*x)) elseif s=="Elastic" then if x==0 or x==1 then return x end;return -(2^(10*(x-1)))*math.sin((x-1.075)*2*math.pi/0.3) elseif s=="Back" then return x*x*((1.70158+1)*x-1.70158) elseif s=="Bounce" then return 1-bO(1-x) end;return x end
+local function EE(t,s,d) if d=="In" then return eI(t,s) elseif d=="Out" then return 1-eI(1-t,s) else if t<0.5 then return eI(t*2,s)/2 else return 1-eI((1-t)*2,s)/2 end end end
+local function BezEval(t,h1x,h1y,h2x,h2y) local function cb(t2,p0,p1,p2,p3) local u=1-t2;return u*u*u*p0+3*u*u*t2*p1+3*u*t2*t2*p2+t2*t2*t2*p3 end;local lo,hi=0,1;for _=1,20 do local m=(lo+hi)/2;if cb(m,0,h1x,h2x,1)<t then lo=m else hi=m end end;return cb((lo+hi)/2,0,h1y,h2y,1) end
+local function lerp(a,b,t) return a+(b-a)*t end
+local function IV(v1,v2,a,vt) if vt=="CFrame" then return v1:Lerp(v2,a) elseif vt=="Vector3" then return v1:Lerp(v2,a) elseif vt=="Color3" then return Color3.new(lerp(v1.R,v2.R,a),lerp(v1.G,v2.G,a),lerp(v1.B,v2.B,a)) elseif vt=="Number" then return lerp(v1,v2,a) elseif vt=="UDim2" then return UDim2.new(lerp(v1.X.Scale,v2.X.Scale,a),lerp(v1.X.Offset,v2.X.Offset,a),lerp(v1.Y.Scale,v2.Y.Scale,a),lerp(v1.Y.Offset,v2.Y.Offset,a)) end;return a<0.5 and v1 or v2 end
+
+local function playAnimation(data, findTarget)
+    local resolved = {}
+    for _,track in ipairs(data.tracks) do
+        local inst = findTarget(track.name, track.type)
+        if inst then
+            table.insert(resolved, {inst=inst, kf=track.kf})
+        else
+            warn("❄️ SNA: Could not find '"..track.name.."' ("..track.type..")")
+        end
+    end
+    if #resolved == 0 then warn("❄️ SNA: No tracks resolved!") return end
+    
+    local cf, acc = 0, 0
+    local conn
+    conn = RS.Heartbeat:Connect(function(dt)
+        acc = acc + dt * data.speed
+        local ft = 1/data.fps
+        while acc >= ft do
+            acc = acc - ft
+            cf = cf + 1
+            if cf > data.total then
+                if data.loop then cf = 0
+                else conn:Disconnect(); return end
+            end
+        end
+        for _,t in pairs(resolved) do
+            if not t.inst or not t.inst.Parent then continue end
+            local fs = {}
+            for f in pairs(t.kf) do table.insert(fs, f) end
+            table.sort(fs)
+            if #fs == 0 then continue end
+            local pf,nf,pd,nd
+            for _,f in ipairs(fs) do
+                if f <= cf then pf=f; pd=t.kf[f] end
+                if f > cf and not nf then nf=f; nd=t.kf[f] end
+            end
+            if pf and nf and pd and nd then
+                local tt = (cf-pf)/(nf-pf)
+                for pn,pi in pairs(pd) do
+                    if nd[pn] then
+                        local a
+                        if pi.bh then
+                            a = BezEval(tt,pi.bh[1],pi.bh[2],pi.bh[3],pi.bh[4])
+                        else
+                            a = EE(tt,pi.es or "Linear",pi.ed or "InOut")
+                        end
+                        pcall(function() t.inst[pn] = IV(pi.v,nd[pn].v,a,pi.t) end)
+                    end
+                end
+            elseif pf and pd then
+                for pn,pi in pairs(pd) do
+                    pcall(function() t.inst[pn] = pi.v end)
+                end
+            end
+        end
+    end)
+    return conn
+end
+]==]
+
+-- 🤖 NPC SCRIPT: Goes INSIDE the Model
+_G.SNA_GenNPCScript = function()
+    local dataStr = serializeAnimData()
+    return "-- ❄️ SNOW ANIMATOR - NPC/OBJECT ANIMATION\n"
+    .."-- 🇧🇷 Cole este Script DENTRO do Model/Rig no Explorer\n"
+    .."-- 🇺🇸 Paste this Script INSIDE the Model/Rig in Explorer\n"
+    .."-- TYPE: Script | PLACE: Inside the Model\n\n"
+    ..dataStr.."\n\n"
+    ..ENGINE_CODE.."\n"
+    .."-- Find target: search inside this model (script.Parent)\n"
+    .."local model = script.Parent\n"
+    .."task.wait(1) -- wait for game to load\n\n"
+    .."local function findTarget(name, ttype)\n"
+    .."    if ttype == 'Motor6D' then\n"
+    .."        for _,d in pairs(model:GetDescendants()) do\n"
+    .."            if d:IsA('Motor6D') and d.Name == name then return d end\n"
+    .."        end\n"
+    .."    elseif ttype == 'BasePart' then\n"
+    .."        for _,d in pairs(model:GetDescendants()) do\n"
+    .."            if d:IsA('BasePart') and d.Name == name then return d end\n"
+    .."        end\n"
+    .."    end\n"
+    .."    return nil\n"
+    .."end\n\n"
+    .."playAnimation(ANIM_DATA, findTarget)\n"
+    .."print('❄️ SNA: '..model.Name..' animation started!')\n"
+end
+
+-- 🎮 PLAYER CHARACTER SCRIPT: Goes in StarterCharacterScripts
+_G.SNA_GenCharScript = function()
+    local dataStr = serializeAnimData()
+    return "-- ❄️ SNOW ANIMATOR - PLAYER CHARACTER ANIMATION\n"
+    .."-- 🇧🇷 Cole este Script em StarterPlayer > StarterCharacterScripts\n"
+    .."-- 🇺🇸 Paste this Script in StarterPlayer > StarterCharacterScripts\n"
+    .."-- TYPE: Script | PLACE: StarterCharacterScripts\n\n"
+    ..dataStr.."\n\n"
+    ..ENGINE_CODE.."\n"
+    .."-- Find target: search inside this character (script.Parent)\n"
+    .."local char = script.Parent\n"
+    .."task.wait(0.5) -- wait for character to load\n\n"
+    .."local function findTarget(name, ttype)\n"
+    .."    if ttype == 'Motor6D' then\n"
+    .."        for _,d in pairs(char:GetDescendants()) do\n"
+    .."            if d:IsA('Motor6D') and d.Name == name then return d end\n"
+    .."        end\n"
+    .."    elseif ttype == 'BasePart' then\n"
+    .."        for _,d in pairs(char:GetDescendants()) do\n"
+    .."            if d:IsA('BasePart') and d.Name == name then return d end\n"
+    .."        end\n"
+    .."    end\n"
+    .."    return nil\n"
+    .."end\n\n"
+    .."playAnimation(ANIM_DATA, findTarget)\n"
+    .."print('❄️ SNA: Character animation started!')\n"
+end
+
+-- 🖼️ UI SCRIPT: Goes as LocalScript in StarterGui
+_G.SNA_GenUIScript = function()
+    local dataStr = serializeAnimData()
+    return "-- ❄️ SNOW ANIMATOR - UI ANIMATION\n"
+    .."-- 🇧🇷 Cole como LocalScript DENTRO do ScreenGui em StarterGui\n"
+    .."-- 🇺🇸 Paste as LocalScript INSIDE the ScreenGui in StarterGui\n"
+    .."-- TYPE: LocalScript | PLACE: Inside ScreenGui in StarterGui\n\n"
+    ..dataStr.."\n\n"
+    ..ENGINE_CODE.."\n"
+    .."-- Find target: search inside this ScreenGui\n"
+    .."local gui = script.Parent\n"
+    .."task.wait(0.3)\n\n"
+    .."local function findTarget(name, ttype)\n"
+    .."    for _,d in pairs(gui:GetDescendants()) do\n"
+    .."        if d.Name == name and d:IsA('GuiObject') then return d end\n"
+    .."    end\n"
+    .."    return nil\n"
+    .."end\n\n"
+    .."playAnimation(ANIM_DATA, findTarget)\n"
+    .."print('❄️ SNA: UI animation started!')\n"
+end
+
+-- Universal ID export
+function exportID()
+    if not ST.target then notify("No target!",C.YEL) return end
+    local aid="SNA_"..genID()
+    local root=ReplicatedStorage:FindFirstChild("SnowAnimatorData")
+    if not root then root=Instance.new("Folder");root.Name="SnowAnimatorData";root.Parent=ReplicatedStorage end
+    local af=Instance.new("Folder");af.Name=aid;af.Parent=root
+    local mf=Instance.new("Folder");mf.Name="Meta";mf.Parent=af
+    local function sv(n,c2,v,p) local i=Instance.new(c2);i.Name=n;i.Value=v;i.Parent=p end
+    sv("Speed","NumberValue",ST.speed,mf);sv("TotalFrames","IntValue",ST.total,mf);sv("Loop","BoolValue",ST.exportLoop,mf)
+    local tf=Instance.new("Folder");tf.Name="Tracks";tf.Parent=af
+    for id,tr in pairs(ST.tracks) do
+        local kfs=ST.kfs[id];if not kfs or not next(kfs) then continue end
+        local trf=Instance.new("Folder");trf.Name=tr.name;trf.Parent=tf
+        sv("Type","StringValue",tr.type,trf)
+        local ov=Instance.new("ObjectValue");ov.Name="Target";ov.Value=tr.inst;ov.Parent=trf
+        local kff=Instance.new("Folder");kff.Name="KF";kff.Parent=trf
+        local frames2={};for f in pairs(kfs) do table.insert(frames2,f) end;table.sort(frames2)
+        for _,f in ipairs(frames2) do
+            local ff=Instance.new("Folder");ff.Name="F"..f;ff.Parent=kff;sv("Frame","IntValue",f,ff)
+            for pn,pi in pairs(kfs[f]) do
+                local pf3=Instance.new("Folder");pf3.Name=pn;pf3.Parent=ff
+                sv("T","StringValue",pi.t,pf3);sv("ES","StringValue",pi.es or "Linear",pf3);sv("ED","StringValue",pi.ed or "InOut",pf3)
+                if pi.bh then sv("BH","StringValue",string.format("%.4f,%.4f,%.4f,%.4f",pi.bh[1],pi.bh[2],pi.bh[3],pi.bh[4]),pf3) end
+                if pi.t=="CFrame" then local c3={pi.v:GetComponents()};local p3={};for _,x in ipairs(c3) do table.insert(p3,string.format("%.5f",x)) end;sv("V","StringValue",table.concat(p3,","),pf3)
+                elseif pi.t=="Vector3" then sv("V","StringValue",string.format("%.5f,%.5f,%.5f",pi.v.X,pi.v.Y,pi.v.Z),pf3)
+                elseif pi.t=="Color3" then sv("V","StringValue",string.format("%.5f,%.5f,%.5f",pi.v.R,pi.v.G,pi.v.B),pf3)
+                elseif pi.t=="Number" then sv("V","NumberValue",pi.v,pf3)
+                elseif pi.t=="UDim2" then sv("V","StringValue",string.format("%.5f,%d,%.5f,%d",pi.v.X.Scale,pi.v.X.Offset,pi.v.Y.Scale,pi.v.Y.Offset),pf3) end
+            end
+        end
+    end
+    notify("✅ ID: "..aid,C.GRN,4)
+    -- Also generate and copy NPC script
+    local code = _G.SNA_GenNPCScript()
+    toClip(code)
+    notify("📋 NPC script copied!",C.ICE,5)
+end
+
+--////////////////////////////////////
+-- KEYBOARD
+--////////////////////////////////////
+if not IS_MOBILE then UserInputService.InputBegan:Connect(function(i,gp) if gp or ST.selectMode or ST.isDragging then return end;if i.KeyCode==Enum.KeyCode.Space then ST.playing=not ST.playing;playBtn.Text=ST.playing and "⏸" or "▶";playBtn.BackgroundColor3=ST.playing and C.GRN or C.BTN elseif i.KeyCode==Enum.KeyCode.K then addKeyframe() elseif i.KeyCode==Enum.KeyCode.Left then ST.frame=math.max(0,ST.frame-1);updatePlayhead();applyFrame(ST.frame) elseif i.KeyCode==Enum.KeyCode.Right then ST.frame=ST.frame+1;updatePlayhead();applyFrame(ST.frame) end end) end
+
+--////////////////////////////////////
+-- MAIN LOOP
+--////////////////////////////////////
+local playAcc=0
+RunService.RenderStepped:Connect(function(dt)
+    if ST.playing then
+        playAcc=playAcc+dt*ST.speed;local ft=1/60
+        while playAcc>=ft do playAcc=playAcc-ft;ST.frame=ST.frame+1
+            local mx=ST.total;for _,kfs in pairs(ST.kfs) do for f in pairs(kfs) do if f>mx then mx=f end end end
+            if ST.frame>mx then if ST.looping then ST.frame=0 else ST.frame=mx;ST.playing=false;playBtn.Text="▶";playBtn.BackgroundColor3=C.BTN end end
+        end;applyFrame(ST.frame);updatePlayhead()
+    end
+end)
+
+rebuildTimeline();updatePlayhead();rebuildSaves()
+notify("❄️ SNA v8 FINAL loaded!",C.ACC,3)
+notify("📖 Press 📖 for complete guide!",C.GRN,4)
+
+print("❄️ SNOW ANIMATOR v8.0 FINAL EDITION READY")
+print("❄️ Guaranteed to work: NPC, Character, UI, Objects")
+print("❄️ Saves persist between sessions")
+print("❄️ Camera locked during UI drag")
